@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>求职工作台</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">J</div>
+          <div>
+            <h1>求职工作台</h1>
+            <p id="todayLabel"></p>
+          </div>
+        </div>
+
+        <nav class="nav-tabs" aria-label="主要视图">
+          <button class="nav-tab active" data-view="dashboard" type="button">总览</button>
+          <button class="nav-tab" data-view="jobs" type="button">岗位</button>
+          <button class="nav-tab" data-view="sources" type="button">摘录</button>
+          <button class="nav-tab" data-view="analysis" type="button">分析</button>
+          <button class="nav-tab" data-view="notes" type="button">笔记</button>
+        </nav>
+
+        <div class="quick-stats">
+          <div>
+            <span id="statJobs">0</span>
+            <small>岗位</small>
+          </div>
+          <div>
+            <span id="statSources">0</span>
+            <small>摘录</small>
+          </div>
+          <div>
+            <span id="statNotes">0</span>
+            <small>笔记</small>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div class="search-wrap">
+            <span aria-hidden="true">⌕</span>
+            <input id="searchInput" type="search" placeholder="搜索岗位、公司、渠道、关键词、笔记" />
+          </div>
+          <div class="toolbar">
+            <span id="serverStatus" class="status-pill">检查服务</span>
+            <button id="refreshBtn" class="icon-button" type="button" title="重新加载数据">↻</button>
+            <button id="exportBtn" class="icon-button" type="button" title="导出 JSON">⇩</button>
+            <label class="icon-button file-button" title="导入 JSON">
+              ⇧
+              <input id="importInput" type="file" accept="application/json" />
+            </label>
+            <button id="clearBtn" class="icon-button danger" type="button" title="清空全部数据">×</button>
+          </div>
+        </header>
+
+        <section id="dashboardView" class="view active" aria-labelledby="dashboardTitle">
+          <div class="section-head">
+            <div>
+              <h2 id="dashboardTitle">今日求职脉络</h2>
+              <p>把岗位事实、外部声音和自己的判断放在同一张桌面上。</p>
+            </div>
+            <button id="composeNoteBtn" class="primary-button" type="button">生成今日笔记</button>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel">
+              <h3>高匹配岗位</h3>
+              <div id="matchedJobs" class="stack-list empty-ready"></div>
+            </section>
+            <section class="panel">
+              <h3>最新摘录</h3>
+              <div id="recentSources" class="stack-list empty-ready"></div>
+            </section>
+            <section class="panel wide">
+              <h3>关键词热度</h3>
+              <div id="keywordCloud" class="keyword-cloud"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="jobsView" class="view" aria-labelledby="jobsTitle">
+          <div class="section-head">
+            <div>
+              <h2 id="jobsTitle">岗位记录</h2>
+              <p>记录 JD、要求、薪资、匹配度和下一步动作。</p>
+            </div>
+          </div>
+
+          <form id="jobForm" class="entry-form">
+            <div class="form-grid">
+              <label>
+                公司
+                <input id="jobCompany" required placeholder="例如：某科技公司" />
+              </label>
+              <label>
+                岗位
+                <input id="jobTitle" required placeholder="例如：前端开发 / 产品经理" />
+              </label>
+              <label>
+                来源
+                <input id="jobSource" placeholder="Boss / 猎聘 / 小红书 / 朋友推荐" />
+              </label>
+              <label>
+                链接
+                <input id="jobUrl" type="url" placeholder="https://..." />
+              </label>
+              <label>
+                阶段
+                <select id="jobStage">
+                  <option>关注</option>
+                  <option>已投递</option>
+                  <option>沟通中</option>
+                  <option>面试中</option>
+                  <option>搁置</option>
+                </select>
+              </label>
+              <label>
+                匹配度
+                <input id="jobFit" type="range" min="1" max="5" value="3" />
+              </label>
+              <label class="span-2">
+                关键词
+                <input id="jobKeywords" placeholder="React, AI, 数据分析，用逗号分隔" />
+              </label>
+              <label class="span-2">
+                岗位要点
+                <textarea id="jobDescription" rows="4" placeholder="粘贴 JD 关键段落、职责、要求、薪资范围"></textarea>
+              </label>
+              <label class="span-2">
+                我的判断
+                <textarea id="jobReflection" rows="3" placeholder="为什么适合 / 不适合，我要补什么材料"></textarea>
+              </label>
+            </div>
+            <button class="primary-button" type="submit">保存岗位</button>
+          </form>
+
+          <div id="jobsList" class="card-grid empty-ready"></div>
+        </section>
+
+        <section id="sourcesView" class="view" aria-labelledby="sourcesTitle">
+          <div class="section-head">
+            <div>
+              <h2 id="sourcesTitle">网页与评论摘录</h2>
+              <p>把小红书、招聘平台、文章、评论区里的有效信息沉淀下来。</p>
+            </div>
+          </div>
+
+          <form id="sourceForm" class="entry-form">
+            <div class="form-grid">
+              <label>
+                渠道
+                <select id="sourceChannel">
+                  <option>小红书</option>
+                  <option>招聘网站</option>
+                  <option>公众号文章</option>
+                  <option>社区论坛</option>
+                  <option>朋友/前同事</option>
+                  <option>其他</option>
+                </select>
+              </label>
+              <label>
+                标题
+                <input id="sourceTitle" required placeholder="内容标题或主题" />
+              </label>
+              <label class="span-2">
+                链接
+                <input id="sourceUrl" type="url" placeholder="https://..." />
+              </label>
+              <label class="span-2">
+                内容摘录
+                <textarea id="sourceContent" required rows="5" placeholder="粘贴正文、搜索结果摘要、评论观点"></textarea>
+              </label>
+              <label class="span-2">
+                我的观察
+                <textarea id="sourceInsight" rows="3" placeholder="这条信息对我的定位、简历、投递策略有什么启发"></textarea>
+              </label>
+              <label class="span-2">
+                标签
+                <input id="sourceTags" placeholder="行业, 公司评价, 面试, 薪资，用逗号分隔" />
+              </label>
+            </div>
+            <button class="primary-button" type="submit">保存摘录</button>
+          </form>
+
+          <div id="sourcesList" class="card-grid empty-ready"></div>
+        </section>
+
+        <section id="notesView" class="view" aria-labelledby="notesTitle">
+          <div class="section-head">
+            <div>
+              <h2 id="notesTitle">工作思考笔记</h2>
+              <p>每天形成一份可复盘、可行动的求职判断。</p>
+            </div>
+          </div>
+
+          <form id="noteForm" class="entry-form">
+            <div class="form-grid">
+              <label>
+                日期
+                <input id="noteDate" type="date" required />
+              </label>
+              <label>
+                主题
+                <input id="noteTitle" required placeholder="例如：AI 产品岗位定位判断" />
+              </label>
+              <label class="span-2">
+                笔记
+                <textarea id="noteBody" required rows="10" placeholder="今天看到了什么、我怎么判断、下一步做什么"></textarea>
+              </label>
+            </div>
+            <button class="primary-button" type="submit">保存笔记</button>
+          </form>
+
+          <div id="notesList" class="note-list empty-ready"></div>
+        </section>
+
+        <section id="analysisView" class="view" aria-labelledby="analysisTitle">
+          <div class="section-head">
+            <div>
+              <h2 id="analysisTitle">链接分析</h2>
+              <p>粘贴招聘页、文章或讨论链接，本地后端会抓取正文，并生成求职视角总结。</p>
+            </div>
+          </div>
+
+          <form id="analysisForm" class="entry-form">
+            <div class="form-grid">
+              <label>
+                链接
+                <input id="analysisUrl" type="url" required placeholder="https://..." />
+              </label>
+              <label>
+                渠道
+                <select id="analysisChannel">
+                  <option>招聘网站</option>
+                  <option>小红书</option>
+                  <option>公众号文章</option>
+                  <option>社区论坛</option>
+                  <option>其他</option>
+                </select>
+              </label>
+              <label class="span-2">
+                我特别关心的问题
+                <textarea id="analysisQuestion" rows="3" placeholder="例如：这个岗位适合我吗？评论里有哪些公司真实情况？简历应该突出什么？"></textarea>
+              </label>
+              <label class="span-2">
+                标签
+                <input id="analysisTags" placeholder="岗位分析, 公司评价, 面试, 薪资，用逗号分隔" />
+              </label>
+            </div>
+            <button id="analysisSubmitBtn" class="primary-button" type="submit">抓取并生成总结</button>
+          </form>
+
+          <section class="panel">
+            <h3>最近一次分析结果</h3>
+            <div id="analysisResult" class="note-body">暂无分析结果</div>
+          </section>
+
+          <section class="panel task-panel">
+            <div class="panel-title-row">
+              <h3>后台任务</h3>
+              <button id="reloadTasksBtn" class="small-button" type="button">刷新任务</button>
+            </div>
+            <div id="analysisTasks" class="task-list empty-ready"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <template id="emptyTemplate">
+      <div class="empty-state">暂无内容</div>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+data/workspace.json
+data/*.tmp
+.env
+__pycache__/
+*.pyc
