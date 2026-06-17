@@ -2,6 +2,11 @@ const state = {
   jobs: [],
   sources: [],
   notes: [],
+  agentConversations: [],
+  activeConversationId: null,
+  activeMessages: [],
+  activeEvents: [],
+  activeMatches: [],
 };
 
 let activePollTimer = null;
@@ -25,6 +30,23 @@ const els = {
   analysisResult: document.querySelector("#analysisResult"),
   analysisSubmitBtn: document.querySelector("#analysisSubmitBtn"),
   analysisTasks: document.querySelector("#analysisTasks"),
+  agentPrompt: document.querySelector("#agentPrompt"),
+  agentSubmitBtn: document.querySelector("#agentSubmitBtn"),
+  agentMessages: document.querySelector("#agentMessages"),
+  agentConversationList: document.querySelector("#agentConversationList"),
+  agentConversationTitle: document.querySelector("#agentConversationTitle"),
+  agentConversationMeta: document.querySelector("#agentConversationMeta"),
+  agentTrace: document.querySelector("#agentTrace"),
+  agentMatches: document.querySelector("#agentMatches"),
+  agentSummary: document.querySelector("#agentSummary"),
+  agentMode: document.querySelector("#agentMode"),
+  reviewPanel: document.querySelector("#reviewPanel"),
+  reviewTitle: document.querySelector("#reviewTitle"),
+  reviewUrl: document.querySelector("#reviewUrl"),
+  reviewContent: document.querySelector("#reviewContent"),
+  reviewQuestion: document.querySelector("#reviewQuestion"),
+  reviewBtn: document.querySelector("#reviewBtn"),
+  reviewMode: document.querySelector("#reviewMode"),
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -102,6 +124,7 @@ function bindForms() {
   });
 
   document.querySelector("#analysisForm").addEventListener("submit", analyzeUrl);
+  document.querySelector("#agentForm").addEventListener("submit", runAgent);
 }
 
 function bindActions() {
@@ -109,8 +132,21 @@ function bindActions() {
   document.querySelector("#composeNoteBtn").addEventListener("click", composeTodayNote);
   document.querySelector("#refreshBtn").addEventListener("click", reloadWorkspace);
   document.querySelector("#reloadTasksBtn").addEventListener("click", loadTasks);
+  document.querySelector("#newAgentChatBtn").addEventListener("click", newAgentChat);
   document.querySelector("#exportBtn").addEventListener("click", exportData);
   document.querySelector("#importInput").addEventListener("change", importData);
+  document.querySelectorAll("[data-agent-preset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      els.agentPrompt.value = button.dataset.agentPreset;
+      els.agentPrompt.focus();
+    });
+  });
+  els.agentPrompt.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      document.querySelector("#agentForm").requestSubmit();
+    }
+  });
   document.querySelector("#clearBtn").addEventListener("click", async () => {
     if (!confirm("确定清空全部本地数据？这会重写 data/workspace.json。")) return;
     await runAction(() => saveAll({ jobs: [], sources: [], notes: [] }));
@@ -121,6 +157,7 @@ async function reloadWorkspace() {
   await runAction(async () => {
     await loadData();
     await loadTasks();
+    await loadAgentConversations();
   });
 }
 
@@ -133,8 +170,8 @@ async function loadData() {
 async function loadTasks() {
   const result = await api("/api/analysis-tasks", {}, 8000);
   renderTasks(result.tasks || []);
-  const running = (result.tasks || []).find((task) => ["queued", "running"].includes(task.status));
-  if (running) startPollingTask(running.id);
+  const active = (result.tasks || []).find((task) => ["queued", "running", "waiting_review"].includes(task.status));
+  if (active) startPollingTask(active.id);
 }
 
 async function createItem(bucket, item) {
@@ -194,6 +231,11 @@ function startPollingTask(taskId) {
     try {
       const result = await api(`/api/analysis-tasks/${taskId}`, {}, 8000);
       renderTasks([result.task]);
+      if (result.task.status === "waiting_review") {
+        clearInterval(activePollTimer);
+        activePollTimer = null;
+        showReviewPanel(result.task);
+      }
       if (result.task.status === "done") {
         clearInterval(activePollTimer);
         activePollTimer = null;
@@ -224,6 +266,227 @@ async function retryTask(taskId) {
     await loadTasks();
     startPollingTask(result.task.id);
   });
+}
+
+async function loadAgentConversations() {
+  const result = await api("/api/agent/conversations", {}, 8000);
+  state.agentConversations = result.conversations || [];
+  renderAgentConversations();
+}
+
+async function openAgentConversation(conversationId) {
+  const result = await api(`/api/agent/conversations/${conversationId}`, {}, 10000);
+  state.activeConversationId = result.conversation.id;
+  state.activeMessages = result.messages || [];
+  state.activeEvents = result.events || [];
+  state.activeMatches = result.matches || [];
+  renderAgentWorkspace(result);
+}
+
+function newAgentChat() {
+  state.activeConversationId = null;
+  state.activeMessages = [];
+  state.activeEvents = [];
+  state.activeMatches = [];
+  els.agentConversationTitle.textContent = "新的求职对话";
+  els.agentConversationMeta.textContent = "本地知识库 + DeepSeek";
+  els.agentSummary.innerHTML = "";
+  els.agentMode.textContent = "";
+  renderAgentMessages();
+  renderAgentTrace([]);
+  renderAgentMatches([]);
+  renderAgentConversations();
+  els.agentPrompt.focus();
+}
+
+async function runAgent(event) {
+  event.preventDefault();
+  const prompt = els.agentPrompt.value.trim();
+  if (!prompt) {
+    alert("先写一个问题，我再开工。");
+    return;
+  }
+  els.agentSubmitBtn.disabled = true;
+  els.agentSubmitBtn.textContent = "…";
+  state.activeMessages.push({ id: `local-${Date.now()}`, role: "user", content: prompt, createdAt: new Date().toISOString() });
+  state.activeEvents = [{ label: "提交问题", status: "running", detail: prompt }];
+  renderAgentMessages();
+  renderAgentTrace(state.activeEvents);
+  renderAgentMatches([]);
+  els.agentSummary.innerHTML = "";
+  els.agentMode.textContent = "";
+  els.agentPrompt.value = "";
+  try {
+    const result = await api("/api/agent", {
+      method: "POST",
+      body: JSON.stringify({ prompt, conversationId: state.activeConversationId }),
+    }, 60000);
+    renderAgentResult(result);
+    await loadAgentConversations();
+  } catch (error) {
+    state.activeMessages.push({ id: `error-${Date.now()}`, role: "assistant", content: error.message, createdAt: new Date().toISOString() });
+    state.activeEvents = [{ label: "运行失败", status: "failed", detail: error.message }];
+    renderAgentMessages();
+    renderAgentTrace(state.activeEvents);
+  } finally {
+    els.agentSubmitBtn.disabled = false;
+    els.agentSubmitBtn.textContent = "↑";
+  }
+}
+
+function renderAgentResult(result) {
+  state.activeConversationId = result.conversationId || state.activeConversationId;
+  state.activeMessages = result.messages || state.activeMessages;
+  state.activeEvents = result.events || result.tools || [];
+  state.activeMatches = result.flatMatches || flattenAgentMatches(result.matches || {});
+  els.agentMode.textContent = result.mode === "llm" ? "大模型增强" : "本地规则";
+  renderAgentMessages();
+  renderAgentTrace(state.activeEvents.length ? state.activeEvents : result.tools || []);
+  renderAgentMatches(state.activeMatches.length ? state.activeMatches : result.matches || {});
+  const summary = result.summary || {};
+  els.agentSummary.innerHTML = `
+    <span class="pill">岗位 ${summary.jobs || 0}</span>
+    <span class="pill">摘录 ${summary.sources || 0}</span>
+    <span class="pill">笔记 ${summary.notes || 0}</span>
+    <span class="pill amber">命中 ${(summary.matchedJobs || 0) + (summary.matchedSources || 0) + (summary.matchedNotes || 0)}</span>
+  `;
+  if (result.conversation) {
+    els.agentConversationTitle.textContent = result.conversation.title;
+    els.agentConversationMeta.textContent = `更新于 ${formatDate(result.conversation.updatedAt)}`;
+  }
+}
+
+function renderAgentTrace(tools) {
+  renderInto(els.agentTrace, tools, (tool) => `
+    <article class="agent-trace-item">
+      <div class="trace-line"></div>
+      <div>
+        <strong>${escapeHtml(tool.label || tool.name || "工具")}</strong>
+        <span>${escapeHtml(tool.detail || "")}</span>
+        <small>${escapeHtml(agentStatusText(tool.status))}</small>
+      </div>
+    </article>
+  `);
+}
+
+function renderAgentMatches(matches) {
+  const cards = Array.isArray(matches) ? matches : flattenAgentMatches(matches);
+  renderInto(els.agentMatches, cards, (item) => `
+    <article class="agent-result-row">
+      <div class="avatar-badge">${escapeHtml((item.title || "?").slice(0, 1))}</div>
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.subtitle || item.bucket || "")}</span>
+        <p>${escapeHtml(item.snippet || "")}</p>
+      </div>
+      <div class="result-actions">
+        <span class="match-mini">${escapeHtml(item.score || 0)}%</span>
+        ${item.url ? `<a class="small-button" href="${escapeAttr(item.url)}" target="_blank" rel="noreferrer">打开</a>` : ""}
+      </div>
+    </article>
+  `);
+}
+
+function renderAgentWorkspace(result) {
+  els.agentConversationTitle.textContent = result.conversation.title;
+  els.agentConversationMeta.textContent = `更新于 ${formatDate(result.conversation.updatedAt)}`;
+  renderAgentMessages();
+  renderAgentTrace(state.activeEvents);
+  renderAgentMatches(state.activeMatches);
+  renderAgentConversations();
+  els.agentMode.textContent = "";
+  els.agentSummary.innerHTML = "";
+}
+
+function renderAgentMessages() {
+  if (!state.activeMessages.length) {
+    els.agentMessages.innerHTML = `
+      <div class="agent-empty">
+        <strong>问我一个求职问题</strong>
+        <span>我会检索你的岗位、摘录和笔记，显示工具调用过程，并把对话保存到本地。</span>
+      </div>
+    `;
+    return;
+  }
+  els.agentMessages.innerHTML = state.activeMessages.map((message) => `
+    <article class="chat-message ${message.role === "user" ? "user" : "assistant"}">
+      <div class="message-meta">${message.role === "user" ? "你" : "FindMyJob Agent"} · ${formatDate(message.createdAt)}</div>
+      <div class="message-bubble">${formatMarkdownLite(message.content)}</div>
+    </article>
+  `).join("");
+  els.agentMessages.scrollTop = els.agentMessages.scrollHeight;
+}
+
+function renderAgentConversations() {
+  renderInto(els.agentConversationList, state.agentConversations, (conversation) => `
+    <button class="conversation-item ${conversation.id === state.activeConversationId ? "active" : ""}" data-conversation-id="${escapeAttr(conversation.id)}" type="button">
+      <strong>${escapeHtml(conversation.title)}</strong>
+      <span>${escapeHtml(conversation.lastMessage || "暂无消息")}</span>
+    </button>
+  `);
+}
+
+function flattenAgentMatches(matches) {
+  if (Array.isArray(matches)) return matches;
+  const labels = { jobs: "岗位", sources: "摘录", notes: "笔记" };
+  return Object.entries(matches || {}).flatMap(([key, items]) =>
+    (items || []).map((item) => ({ ...item, groupLabel: labels[key] || key }))
+  );
+}
+
+let currentReviewTaskId = null;
+
+async function showReviewPanel(task) {
+  currentReviewTaskId = task.id;
+  els.reviewPanel.style.display = "block";
+  els.reviewContent.value = "";
+  els.reviewQuestion.value = "";
+  els.reviewBtn.disabled = false;
+  els.reviewBtn.textContent = "\u786e\u8ba4\u7ee7\u7eed";
+  els.reviewUrl.textContent = task.url || "";
+  try {
+    const r = await api("/api/analysis-tasks/" + task.id + "/state", {}, 5000);
+    const s = r.state || {};
+    els.reviewTitle.textContent = s.title || task.url || "";
+    els.reviewContent.value = s.content || "";
+    els.reviewQuestion.value = s.question || "";
+    if (s.content_status === "insufficient" || !s.content || s.content.length < 80) {
+      els.reviewMode.textContent = "\u26a0\ufe0f \u672a\u80fd\u81ea\u52a8\u6293\u53d6\u5230\u6b63\u6587\uff0c\u8bf7\u624b\u52a8\u7c98\u8d34\u5185\u5bb9\u540e\u7ee7\u7eed";
+      els.reviewContent.placeholder = "\u8bf7\u7c98\u8d34\u6293\u53d6\u5931\u8d25\u7684\u9875\u9762\u6b63\u6587...";
+    } else {
+      els.reviewMode.textContent = "\ud83d\udcc4 \u5df2\u6293\u53d6\u5230\u6b63\u6587\uff0c\u8bf7\u5ba1\u6838\u540e\u7ee7\u7eed";
+      els.reviewContent.placeholder = "\u7f16\u8f91\u6216\u786e\u8ba4\u6293\u53d6\u7684\u5185\u5bb9...";
+    }
+  } catch {
+    els.reviewMode.textContent = "\u26a0\ufe0f \u65e0\u6cd5\u83b7\u53d6\u72b6\u6001\uff0c\u8bf7\u624b\u52a8\u7c98\u8d34\u5185\u5bb9";
+    els.reviewTitle.textContent = task.url || "";
+    els.reviewContent.placeholder = "\u8bf7\u7c98\u8d34\u5185\u5bb9...";
+  }
+  switchView("analysis");
+}
+
+async function resumeCurrentReview() {
+  if (!currentReviewTaskId) return;
+  const data = {
+    content: els.reviewContent.value.trim(),
+    question: els.reviewQuestion.value.trim(),
+    title: els.reviewTitle.textContent,
+  };
+  els.reviewBtn.disabled = true;
+  els.reviewBtn.textContent = "\u63d0\u4ea4\u4e2d...";
+  try {
+    await api("/api/analysis-tasks/" + currentReviewTaskId + "/resume", {
+      method: "POST",
+      body: JSON.stringify({data: data}),
+    });
+    els.reviewPanel.style.display = "none";
+    await loadTasks();
+    startPollingTask(currentReviewTaskId);
+  } catch (error) {
+    els.reviewBtn.disabled = false;
+    els.reviewBtn.textContent = "\u786e\u8ba4\u7ee7\u7eed";
+    alert(error.message);
+  }
 }
 
 async function checkHealth() {
@@ -340,7 +603,7 @@ function renderTasks(tasks) {
         <span>${escapeHtml(task.message || task.error || task.url)}</span>
       </div>
       <div class="task-actions">
-        <span class="pill ${task.status === "failed" ? "error" : ""}">${statusText(task.status)}</span>
+        <span class="pill ${task.status === "failed" ? "error" : ""} ${task.status === "waiting_review" ? "amber" : ""}">${statusText(task.status)}</span>
         ${task.status === "failed" ? `<button class="small-button" data-retry="${task.id}" type="button">重试</button>` : ""}
       </div>
     </article>
@@ -355,6 +618,11 @@ document.body.addEventListener("click", (event) => {
   }
   const retryButton = event.target.closest("[data-retry]");
   if (retryButton) retryTask(retryButton.dataset.retry);
+  const reviewButton = event.target.closest("[data-review]");
+  if (reviewButton) showReviewPanel({id: reviewButton.dataset.review});
+  if (event.target.id === "reviewBtn") resumeCurrentReview();
+  const conversationButton = event.target.closest("[data-conversation-id]");
+  if (conversationButton) openAgentConversation(conversationButton.dataset.conversationId);
 });
 
 function composeTodayNote() {
@@ -452,7 +720,16 @@ function statusText(status) {
     running: "运行中",
     done: "完成",
     failed: "失败",
+    waiting_review: "待审核",
   }[status] || status;
+}
+
+function agentStatusText(status) {
+  return {
+    done: "完成",
+    running: "运行中",
+    failed: "失败",
+  }[status] || "完成";
 }
 
 function buildKeywordCloud() {
@@ -502,6 +779,19 @@ function emptyHtml() {
 function renderTags(tags) {
   if (!tags || !tags.length) return "";
   return `<div class="meta-row">${tags.map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}</div>`;
+}
+
+function formatMarkdownLite(text) {
+  const lines = escapeHtml(text).split("\n");
+  return lines
+    .map((line) => {
+      if (line.startsWith("## ")) return `<h3>${line.slice(3)}</h3>`;
+      if (line.startsWith("# ")) return `<h3>${line.slice(2)}</h3>`;
+      if (line.startsWith("- ")) return `<p class="md-bullet">• ${line.slice(2)}</p>`;
+      if (!line.trim()) return "<br />";
+      return `<p>${line}</p>`;
+    })
+    .join("");
 }
 
 function value(selector) {

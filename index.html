@@ -21,8 +21,9 @@
           <button class="nav-tab active" data-view="dashboard" type="button">总览</button>
           <button class="nav-tab" data-view="jobs" type="button">岗位</button>
           <button class="nav-tab" data-view="sources" type="button">摘录</button>
-          <button class="nav-tab" data-view="analysis" type="button">分析</button>
+          <button class="nav-tab" data-view="agent" type="button">智能体</button>
           <button class="nav-tab" data-view="notes" type="button">笔记</button>
+          <button class="nav-tab" data-view="analysis" type="button">分析</button>
         </nav>
 
         <div class="quick-stats">
@@ -191,6 +192,63 @@
           <div id="sourcesList" class="card-grid empty-ready"></div>
         </section>
 
+        <section id="agentView" class="view" aria-labelledby="agentTitle">
+          <div class="agent-shell">
+            <aside class="agent-history-panel">
+              <div class="agent-history-head">
+                <div>
+                  <h2 id="agentTitle">Ask FindMyJob</h2>
+                  <p>多轮求职研究</p>
+                </div>
+                <button id="newAgentChatBtn" class="small-button" type="button">新对话</button>
+              </div>
+              <div class="prompt-chips compact">
+                <button class="chip" type="button" data-agent-preset="帮我从当前工作台里筛选最适合投递的 5 个岗位，并按匹配度排序。">筛选岗位</button>
+                <button class="chip" type="button" data-agent-preset="结合岗位和摘录，帮我判断我现在最该优先投递哪几类职位。">优先方向</button>
+                <button class="chip" type="button" data-agent-preset="帮我找出当前记录里最值得警惕的公司风险和面试信号。">公司风险</button>
+                <button class="chip" type="button" data-agent-preset="基于当前岗位记录，帮我把简历中最该强化的 3 个点整理出来。">简历强化</button>
+              </div>
+              <div id="agentConversationList" class="agent-conversation-list empty-ready"></div>
+            </aside>
+
+            <section class="agent-chat-panel">
+              <div class="agent-chat-top">
+                <div>
+                  <h3 id="agentConversationTitle">新的求职对话</h3>
+                  <p id="agentConversationMeta">本地知识库 + DeepSeek</p>
+                </div>
+                <div id="agentSummary" class="agent-summary"></div>
+              </div>
+
+              <div id="agentMessages" class="agent-messages">
+                <div class="agent-empty">
+                  <strong>问我一个求职问题</strong>
+                  <span>我会检索你的岗位、摘录和笔记，显示工具调用过程，并把对话保存到本地。</span>
+                </div>
+              </div>
+
+              <form id="agentForm" class="agent-compose">
+                <button class="compose-tool" type="button" title="工具">+</button>
+                <textarea id="agentPrompt" rows="2" placeholder="Ask FindMyJob"></textarea>
+                <button id="agentSubmitBtn" class="send-button" type="submit" title="发送">↑</button>
+              </form>
+            </section>
+
+            <aside class="agent-inspector">
+              <div class="panel-title-row">
+                <h3>执行日志</h3>
+                <span id="agentMode" class="review-mode"></span>
+              </div>
+              <div id="agentTrace" class="agent-trace empty-ready"></div>
+
+              <div class="panel-title-row inspector-section">
+                <h3>命中记录</h3>
+              </div>
+              <div id="agentMatches" class="agent-match-list empty-ready"></div>
+            </aside>
+          </div>
+        </section>
+
         <section id="notesView" class="view" aria-labelledby="notesTitle">
           <div class="section-head">
             <div>
@@ -255,6 +313,30 @@
             </div>
             <button id="analysisSubmitBtn" class="primary-button" type="submit">抓取并生成总结</button>
           </form>
+
+          <section id="reviewPanel" class="panel review-panel" style="display:none">
+            <div class="panel-title-row">
+              <h3>内容审核</h3>
+              <span id="reviewMode" class="review-mode"></span>
+            </div>
+            <div class="review-info">
+              <strong>链接：</strong><span id="reviewUrl"></span>
+            </div>
+            <div class="review-info">
+              <strong>标题：</strong><span id="reviewTitle"></span>
+            </div>
+            <label class="span-2">
+              正文内容（可编辑）
+              <textarea id="reviewContent" rows="8" placeholder="审核抓取的内容..."></textarea>
+            </label>
+            <label class="span-2">
+              我关心的问题
+              <textarea id="reviewQuestion" rows="2" placeholder="可选，补充你想关注的重点..."></textarea>
+            </label>
+            <div class="review-actions">
+              <button id="reviewBtn" class="primary-button" type="button">确认继续</button>
+            </div>
+          </section>
 
           <section class="panel">
             <h3>最近一次分析结果</h3>

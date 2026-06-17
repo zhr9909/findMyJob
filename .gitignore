@@ -1,5 +1,11 @@
 data/workspace.json
 data/*.tmp
+data/*.db
+data/*.db-shm
+data/*.db-wal
 .env
 __pycache__/
 *.pyc
+frontend/node_modules/
+node_modules/
+dist/
